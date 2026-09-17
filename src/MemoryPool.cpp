@@ -208,11 +208,13 @@ bool MemoryPool::initialize(std::size_t bytes) noexcept {
     initial_block->total_size = mapped_size;
     insertFreeBlock(initial_block);
 
+#ifdef ENABLE_CHECKS_METRICS
     capacity_bytes_.store(mapped_size, std::memory_order_relaxed);
     allocated_bytes_.store(0, std::memory_order_relaxed);
     live_allocations_.store(0, std::memory_order_relaxed);
     total_allocations_.store(0, std::memory_order_relaxed);
     total_deallocations_.store(0, std::memory_order_relaxed);
+#endif
 
     const auto begin = reinterpret_cast<std::uintptr_t>(region_);
     region_begin_.store(begin, std::memory_order_release);
@@ -287,6 +289,7 @@ bool MemoryPool::ownsUnlocked(const void* pointer) const noexcept {
 }
 
 Statistics MemoryPool::statistics() const noexcept {
+#ifdef ENABLE_CHECKS_METRICS
     return {
         capacity_bytes_.load(std::memory_order_relaxed),
         allocated_bytes_.load(std::memory_order_relaxed),
@@ -294,6 +297,9 @@ Statistics MemoryPool::statistics() const noexcept {
         total_allocations_.load(std::memory_order_relaxed),
         total_deallocations_.load(std::memory_order_relaxed)
     };
+#else // No stats to be returned.
+    return {0,0,0,0,0};
+#endif
 }
 
 std::size_t MemoryPool::smallBinIndex(std::size_t block_size) noexcept {
@@ -457,7 +463,11 @@ void* MemoryPool::activateBlock(
 ) noexcept {
     const Layout layout = calculateLayout(block, bytes, alignment);
     block->requested_size = bytes;
+#ifdef ENABLE_CHECKS_METRICS
+
     block->user_pointer = layout.user;
+
+#endif
     block->previous_free = nullptr;
     block->next_free = nullptr;
     block->magic = live_block_magic;
@@ -466,12 +476,15 @@ void* MemoryPool::activateBlock(
     std::byte* owner_address =
         front_address - sizeof(detail::BlockHeader*);
     std::memcpy(owner_address, &block, sizeof(block));
+
+#ifdef ENABLE_CHECKS_METRICS
     storeCanary(front_address, front_canary);
     storeCanary(layout.user + bytes, rear_canary);
-
     allocated_bytes_.fetch_add(bytes, std::memory_order_relaxed);
     live_allocations_.fetch_add(1, std::memory_order_relaxed);
     total_allocations_.fetch_add(1, std::memory_order_relaxed);
+#endif
+
     return layout.user;
 }
 
@@ -711,11 +724,16 @@ void MemoryPool::deallocate(void* pointer) noexcept {
         report(MemoryError::double_free, pointer);
         return;
     }
-    if (block->magic != live_block_magic || block->user_pointer != pointer) {
+    if (block->magic != live_block_magic 
+#ifdef ENABLE_CHECKS_METRICS
+        || block->user_pointer != pointer
+#endif
+    ) {
         report(MemoryError::invalid_pointer, pointer);
         return;
     }
 
+#ifdef ENABLE_CHECKS_METRICS
     const bool front_valid = loadCanary(front_address) == front_canary;
     const bool rear_valid =
         loadCanary(user + block->requested_size) == rear_canary;
@@ -726,11 +744,14 @@ void MemoryPool::deallocate(void* pointer) noexcept {
     } else if (!rear_valid) {
         report(MemoryError::rear_canary_corrupted, pointer);
     }
+#endif
 
     detail::ThreadCache* cache = nullptr;
     if (block->total_size <= small_block_limit) {
         cache = registerThreadCache();
     }
+
+#ifdef ENABLE_CHECKS_METRICS
 
     allocated_bytes_.fetch_sub(
         block->requested_size,
@@ -741,6 +762,8 @@ void MemoryPool::deallocate(void* pointer) noexcept {
 
     block->requested_size = 0;
     block->user_pointer = nullptr;
+#endif
+
     if (cache != nullptr) {
         // Coalescing is deferred until this cache returns a batch.
         cacheBlock(*cache, block);

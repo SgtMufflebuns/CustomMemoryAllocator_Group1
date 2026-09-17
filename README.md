@@ -1,4 +1,4 @@
-# CustomMemoryAllocator
+# Improved CustomMemoryAllocator for Group 1 in CSE 625
 
 ## Build and test
 
@@ -6,6 +6,14 @@
 cmake -S . -B build -DBUILD_TESTING=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
+```
+
+## Build and test allocations with canaries and metrics disabled
+
+```sh
+cmake -S . -B build -DBUILD_TESTING=ON -DENABLE_CHECKS_METRICS=OFF
+cmake --build build
+time ./build/test/many_allocations_test 100000000
 ```
 
 ## Global allocation
@@ -23,3 +31,4 @@ allocations made inside dependencies used by that caller.
 - v5.0.0 merges adjacent blocks only when an allocation needs more space
 - v6.0.0 refills caches in batches and creates reusable small block slabs
 - v7.0.0 grows busy cache classes while limiting retained memory
+- v7.0.1 allows for the disabling of canaries and metrics used in the allocator (and adds a test that allows to check many repeated allocations and deallocations)

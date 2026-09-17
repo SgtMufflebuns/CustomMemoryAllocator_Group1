@@ -6,6 +6,9 @@ project(
     LANGUAGES CXX
 )
 
+# Allows us to use pre-processor macros to enable/disable canaries and stat bookkeeping
+option(ENABLE_CHECKS_METRICS "Enable the safety canaries for the allocaator, and additional metrics." ON)
+
 include(GNUInstallDirs)
 find_package(Threads REQUIRED)
 
@@ -47,6 +50,11 @@ target_link_libraries(
     custom_memory_allocator_global_new
     PUBLIC CustomMemoryAllocator::core
 )
+
+if(ENABLE_CHECKS_METRICS)
+    target_compile_definitions(custom_memory_allocator PRIVATE ENABLE_CHECKS_METRICS)
+    target_compile_definitions(custom_memory_allocator_global_new PRIVATE ENABLE_CHECKS_METRICS)
+endif()
 
 if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
     add_subdirectory(test)

@@ -16,3 +16,20 @@ target_link_libraries(
 )
 
 add_test(NAME global_new_tests COMMAND global_new_tests)
+
+option(ENABLE_CHECKS_METRICS "Enable the safety canaries for the allocaator, and additional metrics." ON)
+
+add_executable(many_allocations_test ManyAllocationsTest.cpp)
+target_link_libraries(
+    many_allocations_test
+    PRIVATE CustomMemoryAllocator::core
+)
+
+if(ENABLE_CHECKS_METRICS)
+    target_compile_definitions(many_allocations_test PRIVATE ENABLE_CHECKS_METRICS)
+endif()
+
+add_test(
+    NAME many_allocations_test
+    COMMAND many_allocations_test
+)
