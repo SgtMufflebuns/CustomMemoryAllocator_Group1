@@ -80,9 +80,15 @@ ThreadCache::~ThreadCache() {
 
 namespace {
 
-constexpr std::size_t allocation_overhead =
-    sizeof(detail::BlockHeader) + sizeof(detail::BlockHeader*) +
-    2 * sizeof(std::uint32_t);
+    #ifndef ENABLE_CHECKS_METRICS
+        constexpr std::size_t allocation_overhead =
+            sizeof(detail::BlockHeader) + sizeof(detail::BlockHeader*);
+    #endif    
+    #ifdef ENABLE_CHECKS_METRICS
+        constexpr std::size_t allocation_overhead =
+            sizeof(detail::BlockHeader) + sizeof(detail::BlockHeader*) +
+            2 * sizeof(std::uint32_t);
+    #endif
 
 constexpr std::size_t minimum_remainder =
     allocation_overhead + alignof(std::max_align_t);
@@ -108,14 +114,23 @@ Layout calculateLayout(
 ) noexcept {
     const auto block_address = reinterpret_cast<std::uintptr_t>(block);
     auto cursor = block_address + sizeof(detail::BlockHeader);
+    
+    #ifndef ENABLE_CHECKS_METRICS
+        size_t canarySize = 0;
+    #endif
+
+    #ifdef ENABLE_CHECKS_METRICS
+        size_t canarySize = sizeof(std::uint32_t);
+    #endif
 
     if (addWouldOverflow(
             cursor,
-            sizeof(detail::BlockHeader*) + sizeof(std::uint32_t)
+            sizeof(detail::BlockHeader*) 
+                + canarySize
         )) {
         return {};
     }
-    cursor += sizeof(detail::BlockHeader*) + sizeof(std::uint32_t);
+    cursor += sizeof(detail::BlockHeader*) + canarySize;
 
     if (addWouldOverflow(cursor, alignment - 1)) {
         return {};
@@ -123,10 +138,10 @@ Layout calculateLayout(
     const auto user_address = alignUp(cursor, alignment);
 
     if (addWouldOverflow(user_address, bytes) ||
-        addWouldOverflow(user_address + bytes, sizeof(std::uint32_t))) {
+        addWouldOverflow(user_address + bytes, canarySize)) {
         return {};
     }
-    const auto end_address = user_address + bytes + sizeof(std::uint32_t);
+    const auto end_address = user_address + bytes + canarySize;
 
     if (addWouldOverflow(end_address, alignof(detail::BlockHeader) - 1)) {
         return {};
@@ -463,16 +478,18 @@ void* MemoryPool::activateBlock(
 ) noexcept {
     const Layout layout = calculateLayout(block, bytes, alignment);
     block->requested_size = bytes;
-#ifdef ENABLE_CHECKS_METRICS
-
     block->user_pointer = layout.user;
-
-#endif
     block->previous_free = nullptr;
     block->next_free = nullptr;
     block->magic = live_block_magic;
 
-    std::byte* front_address = layout.user - sizeof(std::uint32_t);
+    #ifndef ENABLE_CHECKS_METRICS
+         std::byte* front_address = layout.user;
+    #endif
+
+    #ifdef ENABLE_CHECKS_METRICS
+        std::byte* front_address = layout.user - sizeof(std::uint32_t);
+    #endif
     std::byte* owner_address =
         front_address - sizeof(detail::BlockHeader*);
     std::memcpy(owner_address, &block, sizeof(block));
@@ -702,12 +719,22 @@ void MemoryPool::deallocate(void* pointer) noexcept {
     auto* user = static_cast<std::byte*>(pointer);
     const auto* region_start = reinterpret_cast<const std::byte*>(begin);
     if (user < region_start + sizeof(detail::BlockHeader) +
-                   sizeof(detail::BlockHeader*) + sizeof(std::uint32_t)) {
+                   sizeof(detail::BlockHeader*) 
+                   #ifdef ENABLE_CHECKS_METRICS
+                     + sizeof(std::uint32_t) 
+                   #endif
+                    ) {
         report(MemoryError::invalid_pointer, pointer);
         return;
     }
 
+    #ifndef ENABLE_CHECKS_METRICS
+    std::byte* front_address = user;
+    #endif
+
+    #ifdef ENABLE_CHECKS_METRICS
     std::byte* front_address = user - sizeof(std::uint32_t);
+    #endif
     std::byte* owner_address =
         front_address - sizeof(detail::BlockHeader*);
     detail::BlockHeader* block = nullptr;
