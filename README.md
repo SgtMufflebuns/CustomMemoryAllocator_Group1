@@ -31,4 +31,4 @@ allocations made inside dependencies used by that caller.
 - v5.0.0 merges adjacent blocks only when an allocation needs more space
 - v6.0.0 refills caches in batches and creates reusable small block slabs
 - v7.0.0 grows busy cache classes while limiting retained memory
-- v7.0.1 allows for the disabling of canaries and metrics used in the allocator (and adds a test that allows to check many repeated allocations and deallocations)
+- v8.0.0 allows for the disabling of canaries and metrics used in the allocator (and adds a test that allows to check many repeated allocations and deallocations)
